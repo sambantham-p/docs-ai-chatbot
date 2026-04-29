@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
 import filetype
-from app.core.file_config import ALLOWED_MIME_TYPES
+from app.config.settings import ALLOWED_MIME_TYPES
 
 logger = logging.getLogger(__name__)
 

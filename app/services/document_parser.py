@@ -5,7 +5,7 @@ from typing import Optional
 import fitz
 import trafilatura
 from docx import Document
-from app.core.file_config import MAX_PDF_CHARS,MAX_LINE_LENGTH,_JUNK_LINE_RE
+from app.config.settings import MAX_PDF_CHARS,MAX_LINE_LENGTH,_JUNK_LINE_RE
 
 logger = logging.getLogger(__name__)
 
