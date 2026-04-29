@@ -1,0 +1,71 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+import logging
+from app.core.logger import setup_logging
+
+
+# Configure logging immediately (before importing modules that log at import time)
+setup_logging()
+logger = logging.getLogger(__name__)
+
+# Import routers after logging is configured
+from app.routers.upload import router as upload_router
+from app.routers.query import router as query_router
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("Starting DocMind Application...")
+    yield
+    logger.info("Shutting down DocMind Application...")
+
+
+# App instance ───────────────────────────────────────────────
+app = FastAPI(
+    title="DocMind API",
+    description="Multi document Q&A system",
+    version="1.0.0",
+    lifespan=lifespan,
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+
+
+# CORS ───────────────────────────────────────────────────────
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# Routers ────────────────────────────────────────────────────
+app.include_router(upload_router, prefix="/api/v1", tags=["Ingestion"])
+app.include_router(query_router, prefix="/api/v1", tags=["Query"])
+
+
+# Health check ───────────────────────────────────────────────
+@app.get("/health", tags=["System"])
+def health():
+    logger.info("Health check called")
+    return {
+        "status": "ok",
+        "service": "DocMind",
+        "version": "1.0.0",
+    }
+
+
+# Root ───────────────────────────────────────────────────────
+@app.get("/", tags=["System"])
+def root():
+    logger.info("Root endpoint accessed")
+    return {
+        "message": "DocMind API is running",
+        "docs": "/docs",
+        "health": "/health",
+    }
