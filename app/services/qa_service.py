@@ -4,7 +4,7 @@ import re
 
 from fastapi import Request
 from app.config.settings import MAX_CONTEXT_CHARS
-from app.prompt import SYSTEM_PROMPT, build_prompt
+from app.prompt import build_prompt, get_system_prompt
 from app.services.confidence import compute_confidence, confidence_label
 from app.services.context_builder import build_context
 from app.services.llm import generate_answer, stream_answer
@@ -17,9 +17,7 @@ _FALLBACK = "I don't have enough information to answer this question."
 
 
 def clean_answer(text: str) -> str:
-    # remove [Doc: xxx]
     text = re.sub(r"\[Doc:.*?\]", "", text)
-    # fix escaped newlines + spacing
     return (
         text.replace("\\n", "\n")
             .replace("\n\n\n", "\n\n")
@@ -53,6 +51,7 @@ def _fallback_response(chunks: list[dict] | None = None) -> dict:
         "chunks":           chunks or [],
         "confidence":       0.0,
         "confidence_label": "low",
+        "grounding_mode":   "strict",
     }
 
 
@@ -61,34 +60,42 @@ async def answer_query(
     doc_id: str | None = None,
     top_k:  int = 5,
 ) -> dict:
-    chunks = await retrieve(query, doc_id=doc_id, top_k=top_k)
+    chunks, allow_general = await retrieve(query, doc_id=doc_id, top_k=top_k)
     if not chunks:
         logger.warning(f"No chunks retrieved for query: {query!r}")
         return _fallback_response()
+
     chunks = _truncate_chunks_by_chars(chunks, MAX_CONTEXT_CHARS)
     if not chunks:
         return _fallback_response()
-    context = build_context(chunks)
-    prompt  = SYSTEM_PROMPT + "\n" + build_prompt(query, context)
-    answer  = await generate_answer(prompt)
+
+    context       = build_context(chunks)
+    system_prompt = get_system_prompt(allow_general=allow_general)
+    user_prompt   = build_prompt(query, context, allow_general=allow_general)
+    prompt        = system_prompt + "\n" + user_prompt
+
+    answer = await generate_answer(prompt)
     if not answer:
         logger.error("LLM returned empty response")
         return _fallback_response(chunks)
+
     answer = clean_answer(answer)
-    # build unique sources
+
     seen: set[str] = set()
     sources: list[str] = []
     for c in chunks:
         if c["doc_id"] not in seen:
             seen.add(c["doc_id"])
             sources.append(c["doc_id"])
+
     confidence = compute_confidence(chunks, top_k=top_k)
     return {
-        "answer": answer,
-        "sources": sources,
-        "chunks": chunks,
-        "confidence": confidence,
+        "answer":           answer,
+        "sources":          sources,
+        "chunks":           chunks,
+        "confidence":       confidence,
         "confidence_label": confidence_label(confidence),
+        "grounding_mode":   "hybrid" if allow_general else "strict",
     }
 
 
@@ -96,17 +103,22 @@ async def retrieve_and_build_prompt(
     query:  str,
     doc_id: str | None = None,
     top_k:  int = 5,
-) -> tuple[list[dict], str, float]:
-    chunks = await retrieve(query, doc_id=doc_id, top_k=top_k)
+) -> tuple[list[dict], str, float, bool]:          # ← added allow_general to return type
+    chunks, allow_general = await retrieve(query, doc_id=doc_id, top_k=top_k)  # ← unpack
     if not chunks:
-        return [], "", 0.0
-    chunks  = _truncate_chunks_by_chars(chunks, MAX_CONTEXT_CHARS)
+        return [], "", 0.0, False
+
+    chunks = _truncate_chunks_by_chars(chunks, MAX_CONTEXT_CHARS)
     if not chunks:
-        return [], "", 0.0
-    context    = build_context(chunks)
-    prompt     = SYSTEM_PROMPT + "\n" + build_prompt(query, context)
-    confidence = compute_confidence(chunks, top_k=top_k)
-    return chunks, prompt, confidence
+        return [], "", 0.0, False
+
+    context       = build_context(chunks)
+    system_prompt = get_system_prompt(allow_general=allow_general)
+    user_prompt   = build_prompt(query, context, allow_general=allow_general)
+    prompt        = system_prompt + "\n" + user_prompt
+    confidence    = compute_confidence(chunks, top_k=top_k)
+
+    return chunks, prompt, confidence, allow_general  # ← pass it up
 
 
 async def empty_stream():
@@ -114,17 +126,25 @@ async def empty_stream():
     yield "data: [DONE]\n\n"
 
 
-async def generate_qa_stream(prompt: str, http_request: Request, confidence: float, sources: list[str]):
+async def generate_qa_stream(
+    prompt:       str,
+    http_request: Request,
+    confidence:   float,
+    sources:      list[str],
+    allow_general: bool = False,                   # ← added
+):
     async for token in stream_answer(prompt):
         if await http_request.is_disconnected():
             logger.info("Client disconnected — stopping stream")
             return
         for part in split_text(token):
             yield f"event: token\ndata: {part}\n\n"
+
     meta = json.dumps({
-        "confidence": confidence,
+        "confidence":       confidence,
         "confidence_label": confidence_label(confidence),
-        "sources": sources,
+        "sources":          sources,
+        "grounding_mode":   "hybrid" if allow_general else "strict",  # ← added
     })
     yield f"event: meta\ndata: {meta}\n\n"
     yield "event: done\ndata: [DONE]\n\n"

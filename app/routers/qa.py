@@ -34,21 +34,23 @@ async def qa_stream_endpoint(
 ) -> StreamingResponse:
     if not request.query.strip():
         raise HTTPException(status_code=400, detail="Query cannot be empty")
-    chunks, prompt, confidence = await retrieve_and_build_prompt(
+    chunks, prompt, confidence, allow_general = await retrieve_and_build_prompt(
         query=request.query,
         doc_id=request.doc_id,
         top_k=request.top_k,
     )
     if not chunks:
         return StreamingResponse(empty_stream(), media_type="text/event-stream")
-    seen:    set[str]  = set()
+
+    seen: set[str] = set()
     sources: list[str] = []
     for c in chunks:
         if c["doc_id"] not in seen:
             seen.add(c["doc_id"])
             sources.append(c["doc_id"])
+
     return StreamingResponse(
-        generate_qa_stream(prompt, http_request, confidence, sources),
+        generate_qa_stream(prompt, http_request, confidence, sources, allow_general),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

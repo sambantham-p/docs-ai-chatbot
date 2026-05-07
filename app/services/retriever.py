@@ -18,7 +18,7 @@ async def retrieve(
     doc_id: str | None = None,
     top_k: int = 5,
     lambda_param: float = 0.6,
-) -> list[dict]:
+) -> tuple[list[dict], bool]:
     query_vec = embed_query(query)
     multiplier  = RETRIEVAL_FILTERED_FETCH if doc_id else RETRIEVAL_BASE_FETCH
     fetch_count = max(
@@ -88,7 +88,7 @@ async def retrieve(
         lambda_param=lambda_param,
     )
     ordered = [chunk_by_id[cid] for cid in mmr_ids if cid in chunk_by_id]
-    reranked = await rerank_async(query, ordered, top_k)
+    reranked, allow_general = await rerank_async(query, ordered, top_k)
     missing = set(ranked_chunk_ids) - set(chunk_by_id)
     if missing:
         logger.warning(
@@ -100,4 +100,4 @@ async def retrieve(
             f"Result starvation after rerank: {len(reranked)}/{top_k} "
             f"(doc_id={doc_id}, cap={QDRANT_CANDIDATE_CAP})"
         )
-    return reranked
+    return reranked, allow_general
