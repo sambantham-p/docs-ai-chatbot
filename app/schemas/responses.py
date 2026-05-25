@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from typing import List, Optional
 
 
 class ChunkResult(BaseModel):
@@ -28,3 +29,31 @@ class UploadResponse(BaseModel):
     doc_id: str
     duplicate: bool = False
 
+
+class ArticleResponse(BaseModel):
+    title: Optional[str] = None
+    link: Optional[str] = None
+    published: Optional[str] = None
+    content: Optional[str] = None
+    content_source: Optional[str] = None
+    source: Optional[str] = None
+
+
+class FeedResponse(BaseModel):
+    feed: str
+    count: int
+    articles: List[ArticleResponse]
+
+
+class ProcessNewsResponse(BaseModel):
+    total_feeds: int
+    total_articles: int
+    feeds: List[FeedResponse]
+
+
+
+class ExtractedContentResponse(BaseModel):
+    success: bool
+    content: Optional[str] = None
+    source: str = "trafilatura"
+    error: Optional[str] = None

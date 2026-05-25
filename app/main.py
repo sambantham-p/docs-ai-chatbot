@@ -10,6 +10,7 @@ from app.utils.chunker_utils import warmup_tokenizer
 from app.routers.upload import router as upload_router
 from app.routers.query import router as query_router
 from app.routers.qa import router as qa_router
+from app.routers.news import router as news_router
 from app.utils.http_client_util import http_client
 
 # Configure logging
@@ -27,11 +28,11 @@ async def lifespan(app: FastAPI):
     # Mongo indexes
     logger.info("Ensuring MongoDB indexes...")
     await setup_indexes()
-    
+
     # Qdrant Initialization
     logger.info("Initializing Qdrant...")
     init_qdrant()
-    
+
     # Reranker disabled for troubleshooting
     # logger.info("Warming up reranker model...")
     # _get_ranker()
@@ -69,6 +70,7 @@ app.add_middleware(
 app.include_router(upload_router, prefix="/api/v1", tags=["Ingestion"])
 app.include_router(query_router, prefix="/api/v1", tags=["Query"])
 app.include_router(qa_router, prefix="/api/v1", tags=["QA"])
+app.include_router(news_router, prefix="/api/v1", tags=["News"])
 
 
 
